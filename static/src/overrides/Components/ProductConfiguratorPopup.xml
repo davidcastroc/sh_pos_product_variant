@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template" xml:space="preserve">
+
+  <t t-extend="ProductConfiguratorPopup"
+     t-inherit="point_of_sale.ProductConfiguratorPopup"
+     t-inherit-mode="extension">
+
+    <!-- Header -->
+    <xpath expr='//ProductInfoBanner' position="before">
+      <t t-set-slot="header">
+        <h4 class="modal-title">Selección de atributo</h4>
+
+        <Input
+          t-if="pos.config.sh_pos_enable_product_variants and getVarientProduct and getVarientProduct.length != 0"
+          tModel="[sh_state, 'shsearchProductWord']"
+          class="'p-0'"
+          isSmall="ui.isSmall"
+          placeholder.translate="Buscar productos..."
+          icon="{type: 'fa', value: 'fa-search fa-lg fa-fw'}"
+          debounceMillis="250"
+        />
+
+        <button type="button"
+                class="btn-close"
+                aria-label="Close"
+                tabindex="-1"
+                t-on-click="close"></button>
+      </t>
+    </xpath>
+
+    <!-- Banner de arriba -->
+    <xpath expr='//ProductInfoBanner' position="replace">
+      <div class="sh_banner">
+        <div class="sh_banner_left">
+          <div class="sh_banner_img" t-if="bannerImageUrl">
+            <img t-att-src="bannerImageUrl" alt=""/>
+          </div>
+
+          <div class="sh_banner_text">
+            <div class="sh_banner_title">
+              <t t-esc="bannerTitle"/>
+            </div>
+
+            <div class="sh_banner_hint" t-if="!sh_state.selectedVariant">
+              Tocá una variante, luego presioná <b>Agregar</b>.
+            </div>
+
+            <div class="sh_banner_hint sh_banner_warn" t-if="sh_state.warnText">
+              <t t-esc="sh_state.warnText"/>
+            </div>
+          </div>
+        </div>
+
+        <div class="sh_banner_right">
+          <div class="sh_banner_price">
+            <t t-esc="bannerPriceText"/>
+          </div>
+          <div class="sh_banner_tax">
+            IVA 13%: <t t-esc="bannerTaxText"/>
+          </div>
+        </div>
+      </div>
+    </xpath>
+
+    <!-- Alternos -->
+    <xpath expr='//Dialog' position="inside">
+      <div class="sh_alternative_products" t-if="pos.config.sh_pos_display_alternative_products">
+        <t t-if="getAlternativeProduct and getAlternativeProduct.length">
+
+          <!-- Título mejor -->
+          <div class="sh_alt_header">
+            <div class="sh_alt_title">Productos alternos</div>
+            <div class="sh_alt_sub">Elegí uno adicional (opcional)</div>
+          </div>
+
+          <!-- ✅ Barra “como la de arriba” pero para alterno -->
+          <div class="sh_alt_banner" t-if="sh_state.selectedAlternative">
+            <div class="sh_alt_banner_left">
+              <div class="sh_alt_banner_img">
+                <img t-att-src="altImageUrl(sh_state.selectedAlternative)" alt=""/>
+              </div>
+              <div class="sh_alt_banner_text">
+                <div class="sh_alt_banner_title">
+                  <t t-esc="sh_state.selectedAlternative.display_name"/>
+                </div>
+                <div class="sh_alt_banner_hint">
+                  Producto alterno seleccionado
+                </div>
+              </div>
+            </div>
+
+            <div class="sh_alt_banner_right">
+              <div class="sh_alt_banner_price">
+                <t t-esc="altPriceText(sh_state.selectedAlternative)"/>
+              </div>
+              <div class="sh_alt_banner_tax">
+                IVA 13%: <t t-esc="altTaxText(sh_state.selectedAlternative)"/>
+              </div>
+            </div>
+          </div>
+
+          <div class="sh_product_variant_2 product-list d-grid gap-2">
+            <div t-foreach="getAlternativeProduct" t-as="product" t-key="product.id"
+                 t-att-class="isAlternativeSelected(product) ? 'sh_card_wrap is-selected is-alt' : 'sh_card_wrap is-alt'">
+
+              <div class="sh_selected_badge" t-if="isAlternativeSelected(product)">✓</div>
+
+              <ProductCard
+                productId="product.id"
+                product="product"
+                class="pos.productViewMode"
+                name="product.display_name"
+                color="product.pos_categ_ids?.at(-1)?.color"
+                imageUrl="altImageUrl(product)"
+                onClick.bind="() => this.selectAlternative(product)"
+              />
+
+              <!-- Lock -->
+              <div class="sh_alt_lock" t-if="!sh_state.selectedVariant">
+                <div class="sh_alt_lock_title">Bloqueado</div>
+                <div class="sh_alt_lock_sub">Seleccioná una variante para habilitar alternos</div>
+              </div>
+
+            </div>
+          </div>
+
+        </t>
+      </div>
+    </xpath>
+
+    <!-- Ocultar configurador nativo SOLO si hay variantes -->
+    <xpath expr="//div[@t-ref='input-area']" position="attributes">
+      <attribute name="t-if">(!pos.config.sh_pos_enable_product_variants) or !(getVarientProduct and getVarientProduct.length)</attribute>
+    </xpath>
+
+    <!-- Variantes -->
+    <xpath expr="//div[@t-ref='input-area']" position="after">
+
+      <t t-if="pos.config.sh_pos_enable_product_variants and shproductsToDisplay and shproductsToDisplay.length != 0">
+        <div class="sh_product_variant_2 product-list d-grid gap-2">
+          <div t-foreach="shproductsToDisplay" t-as="product" t-key="product.id"
+               t-att-class="isVariantSelected(product) ? 'sh_card_wrap is-selected' : 'sh_card_wrap'">
+
+            <div class="sh_selected_badge" t-if="isVariantSelected(product)">✓</div>
+
+            <ProductCard
+              productId="product.id"
+              product="product"
+              class="pos.productViewMode"
+              name="product.display_name"
+              color="product.pos_categ_ids?.at(-1)?.color"
+              imageUrl="variantImageUrl(product)"
+              onClick.bind="() => this.selectVariant(product)"
+            />
+          </div>
+        </div>
+      </t>
+
+      <t t-if="pos.config.sh_pos_enable_product_variants and getVarientProduct and getVarientProduct.length != 0 and shproductsToDisplay and shproductsToDisplay.length == 0">
+        <div class="sh_product_not_found">
+          <img src="/sh_pos_product_variant/static/src/img/not_found.webp"/>
+          <h3 class="sh_text">Producto no encontrado.</h3>
+        </div>
+      </t>
+
+    </xpath>
+
+  </t>
+</templates>
