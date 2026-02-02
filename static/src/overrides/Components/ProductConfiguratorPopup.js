@@ -14,38 +14,61 @@ patch(ProductConfiguratorPopup.prototype, {
         super.setup();
         this.sh_state = useState({
             shsearchProductWord: "",
-            selectedVariant: null,       // siempre por cards
+            selectedVariant: null,
             selectedAlternative: null,
             warnText: "",
         });
     },
 
-    // ---- data
+    // -----------------------------
+    // Helpers
+    // -----------------------------
+    _m2oId(value) {
+        if (Array.isArray(value)) return value[0];
+        if (value && typeof value === "object" && "id" in value) return value.id;
+        return value ?? null;
+    },
+
+    _getTemplateIdFromProps() {
+        return this._m2oId(
+            this.props.product?.product_tmpl_id ||
+            this.props.product?.sh_product_tmpl_id ||
+            this.props.product?.product_tmpl
+        );
+    },
+
+    // -----------------------------
+    // Data
+    // -----------------------------
     get getAlternativeProduct() {
         return this.props.product?.sh_alternative_products || [];
     },
 
     get getVarientProduct() {
-        // NO filtrar por display_type: si no, te quedás sin cards y cae al configurador nativo
-        const tmplId = this.props.product?.sh_product_tmpl_id;
+        const tmplId = this._getTemplateIdFromProps();
         if (!tmplId) return [];
-        return posmodel.models["product.product"]
-            .getAll()
-            .filter((p) => p.sh_product_tmpl_id === tmplId);
+
+        const all = posmodel?.models?.["product.product"]?.getAll?.() || [];
+        return all.filter((p) => {
+            const pid = this._m2oId(p.product_tmpl_id || p.sh_product_tmpl_id || p.product_tmpl);
+            return pid === tmplId;
+        });
     },
 
     get shproductsToDisplay() {
-        let productsToDisplay = this.getVarientProduct;
+        let list = this.getVarientProduct;
         if (this.sh_state.shsearchProductWord) {
             const w = this.sh_state.shsearchProductWord.toLowerCase();
-            productsToDisplay = productsToDisplay.filter((p) =>
+            list = list.filter((p) =>
                 (p.display_name || "").toLowerCase().includes(w)
             );
         }
-        return productsToDisplay;
+        return list;
     },
 
-    // ---- selection
+    // -----------------------------
+    // Selection
+    // -----------------------------
     selectVariant(product) {
         this.sh_state.selectedVariant = product;
         this.sh_state.selectedAlternative = null;
@@ -53,9 +76,9 @@ patch(ProductConfiguratorPopup.prototype, {
     },
 
     selectAlternative(product) {
-        // (si querés permitir alterno SIN variante, quitá este if)
         if (!this.sh_state.selectedVariant) {
-            this.sh_state.warnText = "Primero seleccioná una variante para poder elegir un alterno.";
+            this.sh_state.warnText =
+                "Primero seleccioná una variante para poder elegir un alterno.";
             return;
         }
         this.sh_state.warnText = "";
@@ -71,7 +94,9 @@ patch(ProductConfiguratorPopup.prototype, {
         return this.sh_state.selectedAlternative?.id === product?.id;
     },
 
-    // ---- banner (arriba: variante seleccionada o producto base)
+    // -----------------------------
+    // Banner
+    // -----------------------------
     get bannerProduct() {
         return this.sh_state.selectedVariant || this.props.product;
     },
@@ -80,79 +105,40 @@ patch(ProductConfiguratorPopup.prototype, {
         return this.bannerProduct?.display_name || "";
     },
 
-    // ---- banner alterno (para una barra abajo de "PRODUCTOS ALTERNOS" si lo querés)
-    get altBannerProduct() {
-        return this.sh_state.selectedAlternative || null;
-    },
-
-    get altBannerTitle() {
-        return this.altBannerProduct?.display_name || "";
-    },
-
-    // ---- placeholder image (para que cards existan aunque no haya imagen)
+    // -----------------------------
+    // Images (forzadas)
+    // -----------------------------
     get placeholderImg() {
         return "/web/static/img/placeholder.png";
     },
 
+    _imageUrl(product) {
+        if (!product?.id) return this.placeholderImg;
+        return `/web/image?model=product.product&id=${product.id}&field=image_128`;
+    },
+
     variantImageUrl(product) {
-        try {
-            const url =
-                posmodel.config.show_product_images && product?.getImageUrl
-                    ? product.getImageUrl()
-                    : null;
-            return url || this.placeholderImg;
-        } catch (e) {
-            return this.placeholderImg;
-        }
+        return this._imageUrl(product);
     },
 
     altImageUrl(product) {
-        try {
-            const url =
-                posmodel.config.show_product_images && product?.getImageUrl
-                    ? product.getImageUrl()
-                    : null;
-            return url || this.placeholderImg;
-        } catch (e) {
-            return this.placeholderImg;
-        }
+        return this._imageUrl(product);
     },
 
     get bannerImageUrl() {
-        const p = this.bannerProduct;
-        try {
-            const url =
-                posmodel.config.show_product_images && p?.getImageUrl
-                    ? p.getImageUrl()
-                    : null;
-            return url || this.placeholderImg;
-        } catch (e) {
-            return this.placeholderImg;
-        }
+        return this._imageUrl(this.bannerProduct);
     },
 
-    get altBannerImageUrl() {
-        const p = this.altBannerProduct;
-        if (!p) return null;
-        try {
-            const url =
-                posmodel.config.show_product_images && p?.getImageUrl
-                    ? p.getImageUrl()
-                    : null;
-            return url || this.placeholderImg;
-        } catch (e) {
-            return this.placeholderImg;
-        }
-    },
-
-    // ---- price
+    // -----------------------------
+    // Price (igual que antes)
+    // -----------------------------
     get taxRate() {
         return 0.13;
     },
 
     getVariantPriceExcl(product) {
         try {
-            const pricelist = posmodel.pricelist || posmodel.config?.pricelist_id;
+            const pricelist = posmodel?.pricelist || posmodel?.config?.pricelist_id;
             if (product?.get_price) {
                 const p = product.get_price(pricelist, 1);
                 if (typeof p === "number") return p;
@@ -175,7 +161,7 @@ patch(ProductConfiguratorPopup.prototype, {
         try {
             return posmodel.env.utils.formatCurrency(amount);
         } catch (e) {
-            const n = typeof amount === "number" ? amount : (parseFloat(amount) || 0);
+            const n = typeof amount === "number" ? amount : parseFloat(amount) || 0;
             return `₡${n.toFixed(2)}`;
         }
     },
@@ -196,41 +182,31 @@ patch(ProductConfiguratorPopup.prototype, {
         return this.formatCurrency(this.getVariantTaxAmount(product));
     },
 
-    // Para banner alterno (si lo usás en XML)
-    get altBannerPriceText() {
-        if (!this.altBannerProduct) return "";
-        return this.formatCurrency(this.getVariantPriceIncl(this.altBannerProduct));
-    },
-
-    get altBannerTaxText() {
-        if (!this.altBannerProduct) return "";
-        return this.formatCurrency(this.getVariantTaxAmount(this.altBannerProduct));
-    },
-
-    // ---- confirm (FIX combos + flujo nativo)
+    // -----------------------------
+    // CONFIRM (FIX DEFINITIVO)
+    // -----------------------------
     async confirm() {
         const hasVariants = !!(this.getVarientProduct?.length);
+        const enabled = posmodel?.config?.sh_pos_enable_product_variants ?? true;
 
-        // Si estamos usando nuestro flujo de variantes por cards
-        if (posmodel.config.sh_pos_enable_product_variants && hasVariants) {
+        // Si hay variantes y usamos nuestro flujo -> NO llames super.confirm()
+        // porque el nativo te va a resolver la variante "a su gusto".
+        if (enabled && hasVariants) {
             if (!this.sh_state.selectedVariant) {
                 this.sh_state.warnText = "Te falta seleccionar una variante.";
                 return;
             }
 
-            const originalProduct = this.props.product;
+            const selected = this.sh_state.selectedVariant;
 
-            try {
-                // Engañamos al confirm nativo con la variante seleccionada
-                this.props.product = this.sh_state.selectedVariant;
+            // 1) Agregar EXACTAMENTE la variante seleccionada
+            await reactive(posmodel).addLineToCurrentOrder(
+                { product_id: selected },
+                {},
+                false
+            );
 
-                // El confirm nativo maneja combos/atributos/etc
-                await super.confirm();
-            } finally {
-                this.props.product = originalProduct;
-            }
-
-            // Alterno: extra (no depende del combo)
+            // 2) Alterno adicional
             if (this.sh_state.selectedAlternative) {
                 await reactive(posmodel).addLineToCurrentOrder(
                     { product_id: this.sh_state.selectedAlternative },
@@ -239,7 +215,7 @@ patch(ProductConfiguratorPopup.prototype, {
                 );
             }
 
-            // Por si tu build no lo cierra solo
+            // 3) Cerrar popup
             this.close?.();
             return;
         }
