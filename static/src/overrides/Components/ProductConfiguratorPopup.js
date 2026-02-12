@@ -21,6 +21,13 @@ patch(ProductConfiguratorPopup.prototype, {
     },
 
     // -----------------------------
+    // POS resolver
+    // -----------------------------
+    _getPos() {
+        return this.pos || this.env?.pos || window.posmodel || window.pos || null;
+    },
+
+    // -----------------------------
     // Helpers
     // -----------------------------
     _m2oId(value) {
@@ -38,6 +45,25 @@ patch(ProductConfiguratorPopup.prototype, {
     },
 
     // -----------------------------
+    // ✅ Leer variante “nativa” (chips) si existe
+    // -----------------------------
+    _getNativeSelectedVariant() {
+        // Dependiendo de versión/implementación, puede vivir en distintos lados:
+        return (
+            this.state?.selectedProduct ||
+            this.state?.product ||
+            this.selectedProduct ||
+            this.props?.selectedProduct ||
+            null
+        );
+    },
+
+    // ✅ Variante efectiva: la tuya (cards) o la del nativo (chips)
+    get effectiveSelectedVariant() {
+        return this.sh_state.selectedVariant || this._getNativeSelectedVariant();
+    },
+
+    // -----------------------------
     // Data
     // -----------------------------
     get getAlternativeProduct() {
@@ -45,10 +71,13 @@ patch(ProductConfiguratorPopup.prototype, {
     },
 
     get getVarientProduct() {
+        const pos = this._getPos();
         const tmplId = this._getTemplateIdFromProps();
-        if (!tmplId) return [];
+        if (!pos || !tmplId) return [];
 
-        const all = posmodel?.models?.["product.product"]?.getAll?.() || [];
+        const productModel = pos?.models?.["product.product"];
+        const all = productModel?.getAll?.() || [];
+
         return all.filter((p) => {
             const pid = this._m2oId(p.product_tmpl_id || p.sh_product_tmpl_id || p.product_tmpl);
             return pid === tmplId;
@@ -59,9 +88,7 @@ patch(ProductConfiguratorPopup.prototype, {
         let list = this.getVarientProduct;
         if (this.sh_state.shsearchProductWord) {
             const w = this.sh_state.shsearchProductWord.toLowerCase();
-            list = list.filter((p) =>
-                (p.display_name || "").toLowerCase().includes(w)
-            );
+            list = list.filter((p) => (p.display_name || "").toLowerCase().includes(w));
         }
         return list;
     },
@@ -76,9 +103,8 @@ patch(ProductConfiguratorPopup.prototype, {
     },
 
     selectAlternative(product) {
-        if (!this.sh_state.selectedVariant) {
-            this.sh_state.warnText =
-                "Primero seleccioná una variante para poder elegir un alterno.";
+        if (!this.effectiveSelectedVariant) {
+            this.sh_state.warnText = "Primero seleccioná una variante para poder elegir un alterno.";
             return;
         }
         this.sh_state.warnText = "";
@@ -98,7 +124,8 @@ patch(ProductConfiguratorPopup.prototype, {
     // Banner
     // -----------------------------
     get bannerProduct() {
-        return this.sh_state.selectedVariant || this.props.product;
+        // ✅ Banner ahora sigue la variante efectiva
+        return this.effectiveSelectedVariant || this.props.product;
     },
 
     get bannerTitle() {
@@ -106,7 +133,7 @@ patch(ProductConfiguratorPopup.prototype, {
     },
 
     // -----------------------------
-    // Images (forzadas)
+    // Images
     // -----------------------------
     get placeholderImg() {
         return "/web/static/img/placeholder.png";
@@ -130,15 +157,16 @@ patch(ProductConfiguratorPopup.prototype, {
     },
 
     // -----------------------------
-    // Price (igual que antes)
+    // Price
     // -----------------------------
     get taxRate() {
         return 0.13;
     },
 
     getVariantPriceExcl(product) {
+        const pos = this._getPos();
         try {
-            const pricelist = posmodel?.pricelist || posmodel?.config?.pricelist_id;
+            const pricelist = pos?.pricelist || pos?.config?.pricelist_id;
             if (product?.get_price) {
                 const p = product.get_price(pricelist, 1);
                 if (typeof p === "number") return p;
@@ -158,8 +186,9 @@ patch(ProductConfiguratorPopup.prototype, {
     },
 
     formatCurrency(amount) {
+        const pos = this._getPos();
         try {
-            return posmodel.env.utils.formatCurrency(amount);
+            return pos.env.utils.formatCurrency(amount);
         } catch (e) {
             const n = typeof amount === "number" ? amount : parseFloat(amount) || 0;
             return `₡${n.toFixed(2)}`;
@@ -183,44 +212,46 @@ patch(ProductConfiguratorPopup.prototype, {
     },
 
     // -----------------------------
-    // CONFIRM (FIX DEFINITIVO)
+    // ✅ CONFIRM: soporta ambos flujos
     // -----------------------------
     async confirm() {
-        const hasVariants = !!(this.getVarientProduct?.length);
-        const enabled = posmodel?.config?.sh_pos_enable_product_variants ?? true;
+        const pos = this._getPos();
+        const enabled = pos?.config?.sh_pos_enable_product_variants ?? true;
 
-        // Si hay variantes y usamos nuestro flujo -> NO llames super.confirm()
-        // porque el nativo te va a resolver la variante "a su gusto".
-        if (enabled && hasVariants) {
-            if (!this.sh_state.selectedVariant) {
-                this.sh_state.warnText = "Te falta seleccionar una variante.";
-                return;
-            }
-
+        // Si elegiste variante con TU UI (cards) -> agregás vos mismo
+        if (enabled && this.sh_state.selectedVariant) {
             const selected = this.sh_state.selectedVariant;
 
-            // 1) Agregar EXACTAMENTE la variante seleccionada
-            await reactive(posmodel).addLineToCurrentOrder(
+            await reactive(pos).addLineToCurrentOrder(
                 { product_id: selected },
                 {},
                 false
             );
 
-            // 2) Alterno adicional
             if (this.sh_state.selectedAlternative) {
-                await reactive(posmodel).addLineToCurrentOrder(
+                await reactive(pos).addLineToCurrentOrder(
                     { product_id: this.sh_state.selectedAlternative },
                     {},
                     false
                 );
             }
 
-            // 3) Cerrar popup
             this.close?.();
             return;
         }
 
-        // fallback normal
-        return super.confirm();
+        // Si NO elegiste con cards (ej: chips nativos) -> dejá al nativo crear la línea
+        // y luego agregás el alterno.
+        const res = await super.confirm();
+
+        if (this.sh_state.selectedAlternative) {
+            await reactive(pos).addLineToCurrentOrder(
+                { product_id: this.sh_state.selectedAlternative },
+                {},
+                false
+            );
+        }
+
+        return res;
     },
 });
