@@ -41,7 +41,8 @@
               <t t-esc="bannerTitle"/>
             </div>
 
-            <div class="sh_banner_hint" t-if="!sh_state.selectedVariant">
+            <!-- ✅ OJO: ahora usamos effectiveSelectedVariant -->
+            <div class="sh_banner_hint" t-if="!effectiveSelectedVariant">
               Tocá una variante, luego presioná <b>Agregar</b>.
             </div>
 
@@ -67,13 +68,11 @@
       <div class="sh_alternative_products" t-if="pos.config.sh_pos_display_alternative_products">
         <t t-if="getAlternativeProduct and getAlternativeProduct.length">
 
-          <!-- Título mejor -->
           <div class="sh_alt_header">
             <div class="sh_alt_title">Productos alternos</div>
             <div class="sh_alt_sub">Elegí uno adicional (opcional)</div>
           </div>
 
-          <!-- ✅ Barra “como la de arriba” pero para alterno -->
           <div class="sh_alt_banner" t-if="sh_state.selectedAlternative">
             <div class="sh_alt_banner_left">
               <div class="sh_alt_banner_img">
@@ -105,18 +104,20 @@
 
               <div class="sh_selected_badge" t-if="isAlternativeSelected(product)">✓</div>
 
-              <ProductCard
-                productId="product.id"
-                product="product"
-                class="pos.productViewMode"
-                name="product.display_name"
-                color="product.pos_categ_ids?.at(-1)?.color"
-                imageUrl="altImageUrl(product)"
-                onClick.bind="() => this.selectAlternative(product)"
-              />
+              <!-- ✅ Wrapper clickable -->
+              <div class="sh_card_click" t-on-click="() => this.selectAlternative(product)">
+                <ProductCard
+                  productId="product.id"
+                  product="product"
+                  class="pos.productViewMode"
+                  name="product.display_name"
+                  color="product.pos_categ_ids?.at(-1)?.color"
+                  imageUrl="altImageUrl(product)"
+                />
+              </div>
 
-              <!-- Lock -->
-              <div class="sh_alt_lock" t-if="!sh_state.selectedVariant">
+              <!-- ✅ Lock ahora depende de effectiveSelectedVariant (no solo sh_state) -->
+              <div class="sh_alt_lock" t-if="!effectiveSelectedVariant">
                 <div class="sh_alt_lock_title">Bloqueado</div>
                 <div class="sh_alt_lock_sub">Seleccioná una variante para habilitar alternos</div>
               </div>
@@ -143,15 +144,18 @@
 
             <div class="sh_selected_badge" t-if="isVariantSelected(product)">✓</div>
 
-            <ProductCard
-              productId="product.id"
-              product="product"
-              class="pos.productViewMode"
-              name="product.display_name"
-              color="product.pos_categ_ids?.at(-1)?.color"
-              imageUrl="variantImageUrl(product)"
-              onClick.bind="() => this.selectVariant(product)"
-            />
+            <!-- ✅ Wrapper clickable -->
+            <div class="sh_card_click" t-on-click="() => this.selectVariant(product)">
+              <ProductCard
+                productId="product.id"
+                product="product"
+                class="pos.productViewMode"
+                name="product.display_name"
+                color="product.pos_categ_ids?.at(-1)?.color"
+                imageUrl="variantImageUrl(product)"
+              />
+            </div>
+
           </div>
         </div>
       </t>
@@ -167,3 +171,4 @@
 
   </t>
 </templates>
+
