@@ -10,14 +10,27 @@ ProductConfiguratorPopup.components.ProductCard = ProductCard;
 ProductConfiguratorPopup.components.Input = Input;
 
 patch(ProductConfiguratorPopup.prototype, {
+    // =============================
+    // Setup
+    // =============================
     setup() {
         super.setup();
+
         this.sh_state = useState({
             shsearchProductWord: "",
             selectedVariant: null,
             selectedAlternative: null,
             warnText: "",
         });
+
+        // ✅ Debug handles globales (para PROD)
+        try {
+            window.__PCP__ = this; // ProductConfiguratorPopup instance
+            window.__POS__ = this._getPos?.() || this.pos || this.env?.pos || null;
+            if (window.__ALT_DEBUG__) {
+                console.warn("[ALT] Debug handles set: window.__PCP__ (popup), window.__POS__ (pos)");
+            }
+        } catch (e) {}
     },
 
     // =============================
@@ -27,7 +40,7 @@ patch(ProductConfiguratorPopup.prototype, {
         return this.pos || this.env?.pos || window.posmodel || window.pos || null;
     },
 
-    // Toggle debug: en consola -> window.__ALT_DEBUG__ = true
+    // Toggle debug: window.__ALT_DEBUG__ = true
     _isDebug() {
         return !!window.__ALT_DEBUG__;
     },
@@ -57,7 +70,7 @@ patch(ProductConfiguratorPopup.prototype, {
         );
     },
 
-    // Variante “nativa” si existe (chips)
+    // Variante “nativa” (chips) si existe
     _getNativeSelectedVariant() {
         return (
             this.state?.selectedProduct ||
@@ -79,8 +92,7 @@ patch(ProductConfiguratorPopup.prototype, {
     _getAllProducts() {
         const pos = this._getPos();
         const productModel = pos?.models?.["product.product"];
-        const all = productModel?.getAll?.() || [];
-        return all;
+        return productModel?.getAll?.() || [];
     },
 
     _findProductById(id) {
@@ -90,30 +102,32 @@ patch(ProductConfiguratorPopup.prototype, {
 
     _findFirstVariantByTemplateId(tmplId) {
         if (!tmplId) return null;
-        return this._getAllProducts().find((p) => {
-            const pid = this._m2oId(p.product_tmpl_id || p.sh_product_tmpl_id || p.product_tmpl);
-            return pid === tmplId;
-        }) || null;
+        return (
+            this._getAllProducts().find((p) => {
+                const pid = this._m2oId(p.product_tmpl_id || p.sh_product_tmpl_id || p.product_tmpl);
+                return pid === tmplId;
+            }) || null
+        );
     },
 
     /**
-     * Convierte lo que venga en sh_alternative_products a un product.product válido del POS:
-     * - si viene product.product -> lo devuelve
-     * - si viene product.template -> busca el primer variant (product.product) por tmpl_id
-     * - si viene un id -> intenta por product.id y si no, asume que es tmpl_id y busca variant
-     * - si viene [id, name] -> usa id
+     * Convierte sh_alternative_products a product.product válido del POS:
+     * - si viene product.product -> ok
+     * - si viene product.template -> busca primer variant por tmpl_id
+     * - si viene id -> intenta product.id; si no existe, asume tmpl_id
+     * - si viene [id,name] -> usa id
      */
     _resolveToProductProduct(value) {
         if (!value) return null;
 
-        // Record (obj)
+        // Record object
         if (typeof value === "object" && !Array.isArray(value)) {
             if ("id" in value) {
-                // 1) si existe como product.product en POS
+                // 1) existe como product.product (id)
                 const asProduct = this._findProductById(value.id);
                 if (asProduct) return asProduct;
 
-                // 2) si no, probablemente es template -> buscar variant por tmpl
+                // 2) si no, asumir template
                 const tmplId =
                     this._m2oId(value.product_tmpl_id || value.sh_product_tmpl_id || value.product_tmpl) ||
                     value.id;
@@ -122,17 +136,16 @@ patch(ProductConfiguratorPopup.prototype, {
             return null;
         }
 
-        // Array: [id, name] o similar
+        // Array [id, name]
         if (Array.isArray(value)) {
             const id = this._m2oId(value);
             return this._resolveToProductProduct(id);
         }
 
-        // Primitive id (number)
+        // Number id
         if (typeof value === "number") {
             const asProduct = this._findProductById(value);
             if (asProduct) return asProduct;
-
             return this._findFirstVariantByTemplateId(value);
         }
 
@@ -140,16 +153,30 @@ patch(ProductConfiguratorPopup.prototype, {
     },
 
     // =============================
-    // Data getters
+    // Data
     // =============================
     get getAlternativeProduct() {
-        const pos = this._getPos();
-        const raw = this.props.product?.sh_alternative_products || [];
+        const raw = this.props.product?.sh_alternative_products;
 
-        this._debug("RAW sh_alternative_products", raw);
+        // ✅ Si el field ni existe en props.product, es loader (PROD)
+        if (raw === undefined) {
+            if (this._isDebug()) {
+                console.warn(
+                    "[ALT] sh_alternative_products = undefined en props.product. " +
+                        "Esto es 99% loader: el POS no está cargando el field en PROD."
+                );
+                console.warn("[ALT] props.product snapshot:", this.props.product);
+            }
+            return [];
+        }
+
+        // raw puede ser [] o Proxy(Array)
+        const arr = raw || [];
+
+        this._debug("RAW sh_alternative_products", arr);
         this._debug("POS product.product count", [{ count: this._getAllProducts().length }]);
 
-        const resolved = raw.map((x) => this._resolveToProductProduct(x)).filter(Boolean);
+        const resolved = arr.map((x) => this._resolveToProductProduct(x)).filter(Boolean);
 
         // dedupe
         const seen = new Set();
@@ -160,11 +187,12 @@ patch(ProductConfiguratorPopup.prototype, {
             unique.map((p) => ({ id: p.id, name: p.display_name }))
         );
 
-        // Si raw trae cosas pero resolved queda vacío => alternos no cargados en POS o vienen como templates no disponibles
-        if (raw.length && !unique.length) {
+        // Si hay raw pero no resolvió nada => alternos no cargados en POS
+        if (arr.length && !unique.length) {
             console.warn(
-                "[ALT] Alternos definidos pero NO resolvibles en POS. Casi seguro no están cargados en la sesión POS.",
-                { raw }
+                "[ALT] Alternos definidos pero NO resolvibles en POS. " +
+                    "Casi seguro esos alternos no están cargados en esta sesión POS (categorías/available in POS).",
+                { raw: arr }
             );
         }
 
@@ -307,13 +335,13 @@ patch(ProductConfiguratorPopup.prototype, {
     },
 
     // =============================
-    // ✅ ADD PRODUCT: a prueba de PROD
+    // ✅ Add product: tolerante a builds diferentes
     // =============================
     async _addProductToOrder(product) {
         const pos = this._getPos();
         if (!pos || !product) return;
 
-        // 1) Tu método actual
+        // 1) Método tipo store
         if (typeof pos.addLineToCurrentOrder === "function") {
             return await reactive(pos).addLineToCurrentOrder({ product_id: product }, {}, false);
         }
@@ -324,7 +352,7 @@ patch(ProductConfiguratorPopup.prototype, {
             return order.add_product(product);
         }
 
-        // 3) Método alterno (si existe en tu build)
+        // 3) Alterno
         if (typeof pos.addProductToCurrentOrder === "function") {
             return pos.addProductToCurrentOrder(product);
         }
@@ -333,13 +361,13 @@ patch(ProductConfiguratorPopup.prototype, {
     },
 
     // =============================
-    // ✅ CONFIRM: soporta ambos flujos
+    // ✅ Confirm
     // =============================
     async confirm() {
         const pos = this._getPos();
         const enabled = pos?.config?.sh_pos_enable_product_variants ?? true;
 
-        // Caso: variante seleccionada con tu UI
+        // Caso: variante elegida con tu UI
         if (enabled && this.sh_state.selectedVariant) {
             await this._addProductToOrder(this.sh_state.selectedVariant);
 
@@ -351,7 +379,7 @@ patch(ProductConfiguratorPopup.prototype, {
             return;
         }
 
-        // Caso: nativo crea la línea, vos agregás alterno
+        // Caso: nativo crea la línea, luego agregás alterno
         const res = await super.confirm();
 
         if (this.sh_state.selectedAlternative) {
