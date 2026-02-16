@@ -284,7 +284,7 @@ patch(ProductConfiguratorPopup.prototype, {
             this.close?.();
             return;
         }
-
+        
         const res = await super.confirm();
 
         if (this.sh_state.selectedAlternative) {
